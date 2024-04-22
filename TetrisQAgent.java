@@ -112,7 +112,7 @@ public class TetrisQAgent
                                  final GameCounter gameCounter)
     {
         gameCounter.isTrainingGame();
-        return this.getRandom().nextDouble() <= EXPLORATION_PROB;
+        return false;
     }
 
     /**
@@ -209,17 +209,16 @@ public class TetrisQAgent
                
                 if(board.isCoordinateOccupied(x, y) && block == false){
                     block = true;
-                    reward -= y;
+                    reward -= 2*y;
                     top = y;
 
-                // //more blocks below 
-                // }else if(board.isCoordinateOccupied(x, y) && block == true){
-                //     //TODO: make scalar to height
-                //     reward -= 1.0;
+                // more blocks below 
+                }else if(board.isCoordinateOccupied(x, y) && block == true){
+                     reward -= 2*y;
                 
                 //still empty
                 }else if(!board.isCoordinateOccupied(x, y) && block == false){
-                    reward += 0.5;
+                    reward += 3*y;
                 //hole found
                 }else if(!board.isCoordinateOccupied(x, y) && block == true){
                     reward -= 3* Math.abs(top-y);
