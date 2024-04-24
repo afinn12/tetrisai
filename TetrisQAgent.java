@@ -50,12 +50,15 @@ public class TetrisQAgent
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
         final int numPixelsInImage = Board.NUM_ROWS * Board.NUM_COLS;
-        final int hiddenDim = 2 * numPixelsInImage;
+        final int hiddenDim = 4 * numPixelsInImage; // can change this dim 
         final int outDim = 1;
 
         Sequential qFunction = new Sequential();
+
+        // add input layer
         qFunction.add(new Dense(numPixelsInImage, hiddenDim));
-        qFunction.add(new Tanh());
+        qFunction.add(new ReLU()); //changed to ReLU activation fxn -> can try ReLU, Tanh, Sigmoid
+        // add output layer
         qFunction.add(new Dense(hiddenDim, outDim));
 
         return qFunction;
@@ -80,16 +83,68 @@ public class TetrisQAgent
     public Matrix getQFunctionInput(final GameView game,
                                     final Mino potentialAction)
     {
-        Matrix flattenedImage = null;
-        try
-        {
-            flattenedImage = game.getGrayscaleImage(potentialAction).flatten();
-        } catch(Exception e)
-        {
-            e.printStackTrace();
-            System.exit(-1);
+        // get some game state info
+        Board board = game.getBoard();
+        Mino currentMino = game.getCurrentMino();
+        int totalScore = game.getTotalScore();
+        int scoreThisTurn = game.getScoreThisTurn();
+        List<Mino.MinoType> nextThreeMinoTypes = game.viewNextThreeMinoTypes();
+        boolean isTSpin = game.wasTSpin(currentMino);
+        boolean isDoubleTSpin = game.wasDoubleTSpin(currentMino);
+        boolean isGameOver = game.isOver();
+        Map<Mino, Game.BFSNode> finalMinoPositions = game.getFinalMinoPositions();
+
+        // make input vector
+        int inputSize = calculateInputSize(board);
+        Matrix inputVector = new Matrix(1, inputSize);
+        int idx = 0;
+
+        // encode board state into input vector
+        encodeBoardState(inputVector, board);
+
+        // add other game state features to the input vector
+        inputVector.set(0, idx++, totalScore);
+        inputVector.set(0, idx++, scoreThisTurn);
+        inputVector.set(0, idx++, nextThreeMinoTypes.size());
+        inputVector.set(0, idx++, isTSpin ? 1 : 0);
+        inputVector.set(0, idx++, isDoubleTSpin ? 1 : 0);
+        inputVector.set(0, idx++, isGameOver ? 1 : 0);
+
+        // normalize input features (I think this will help with converging faster)
+        normalizeInput(inputVector);
+
+        return inputVector;
+    }
+
+    // helper method
+    private int calculateInputSize(Board board) {
+        int numRows = board.getNumRows();
+        int numCols = board.getNumCols();
+        return numRows * numCols + 6; // include additional game state features
+    }
+
+    // helper method to encode board state into input vector
+    private void encodeBoardState(Matrix inputVector, Board board) {
+        int numRows = board.getNumRows();
+        int numCols = board.getNumCols();
+        int[][] boardMatrix = board.toArray();
+        int idx = 0;
+        for (int i = 0; i < numRows; i++) {
+            for (int j = 0; j < numCols; j++) {
+                inputVector.set(0, idx++, boardMatrix[i][j]);
+            }
         }
-        return flattenedImage;
+    }
+
+    // helper method
+    private void normalizeInput(Matrix inputVector) {
+        double maxFeatureValue = inputVector.max();
+        double minFeatureValue = inputVector.min();
+        double range = maxFeatureValue - minFeatureValue;
+        for (int i = 0; i < inputVector.getColumns(); i++) {
+            double normalizedValue = (inputVector.get(0, i) - minFeatureValue) / range;
+            inputVector.set(0, i, normalizedValue);
+        }
     }
 
     /**
@@ -111,8 +166,7 @@ public class TetrisQAgent
     public boolean shouldExplore(final GameView game,
                                  final GameCounter gameCounter)
     {
-        gameCounter.isTrainingGame();
-        return false;
+        return random.nextDouble() < EXPLORATION_PROB; // Explore with probability EXPLORATION_PROB
     }
 
     /**
@@ -195,38 +249,12 @@ public class TetrisQAgent
     @Override
     public double getReward(final GameView game)
     {
-        double reward = 0;
-        Board board = game.getBoard();
-       
-        
-     
-        for( int x = 9; x>=0; x--){
-            int top = 21;
-
-            for( int y = 21; x>=0; x--){
-                boolean block = false;
-                //empty in the column so far, first block found
-               
-                if(board.isCoordinateOccupied(x, y) && block == false){
-                    block = true;
-                    reward -= 2*y;
-                    top = y;
-
-                // more blocks below 
-                }else if(board.isCoordinateOccupied(x, y) && block == true){
-                     reward -= 2*y;
-                
-                //still empty
-                }else if(!board.isCoordinateOccupied(x, y) && block == false){
-                    reward += 3*y;
-                //hole found
-                }else if(!board.isCoordinateOccupied(x, y) && block == true){
-                    reward -= 3* Math.abs(top-y);
-                }
-            }
-        }
-
+        double reward = game.getScoreThisTurn(); // start with this turns score
+        int maxHeight = game.getMaxHeight(); // getMaxHeight() is just a place holder rn, not defined i dont think
+        reward -= maxHeight; // penalizes higher stack height
+        reward += game.getLinesCleared(); // rewards for lines cleared
         return reward;
     }
 
 }
+
